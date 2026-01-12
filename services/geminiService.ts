@@ -1,43 +1,45 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
-/* ===== Types preserved for compatibility ===== */
+/* ================= TYPES ================= */
 
 export interface FileData {
   inlineData: {
-    data: string;
-    mimeType: string;
+    data: string;      // base64
+    mimeType: string; // application/pdf | image/png | image/jpeg
   };
 }
 
-export interface AnalyzeResponse {
+export interface AnalyzeResult {
   transactions: any[];
   observations: any[];
   complianceChecklist: any[];
 }
 
-/* ===== MAIN FUNCTION (SAME SIGNATURE AS BEFORE) ===== */
+/* ================= MAIN FUNCTION ================= */
 
 export const analyzeTransactionsAI = async (
   textData: string,
   fileData?: FileData,
   mode: "Auditor" | "School" = "School",
   accountType: "Savings" | "Current" = "Savings"
-): Promise<AnalyzeResponse> => {
-  // CASE 1: FILE UPLOAD → OCR handled by backend
-  if (fileData) {
-    const byteCharacters = atob(fileData.inlineData.data);
-    const byteNumbers = new Array(byteCharacters.length)
-      .fill(0)
-      .map((_, i) => byteCharacters.charCodeAt(i));
-    const byteArray = new Uint8Array(byteNumbers);
+): Promise<AnalyzeResult> => {
 
-    const blob = new Blob([byteArray], {
+  /* ---------- CASE 1: FILE UPLOAD (PDF / IMAGE) ---------- */
+  if (fileData) {
+    // Convert base64 → Blob
+    const binary = atob(fileData.inlineData.data);
+    const bytes = new Uint8Array(binary.length);
+
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+
+    const blob = new Blob([bytes], {
       type: fileData.inlineData.mimeType
     });
 
     const formData = new FormData();
-    formData.append("file", blob);
-
+    formData.append("file", blob, "document");
     formData.append("mode", mode);
     formData.append("accountType", accountType);
 
@@ -46,20 +48,22 @@ export const analyzeTransactionsAI = async (
       {
         method: "POST",
         body: formData
+        // ❌ DO NOT set headers here (multer needs boundary)
       }
     );
 
     if (!response.ok) {
-      throw new Error("Document OCR analysis failed");
+      const text = await response.text();
+      throw new Error(`Document analysis failed: ${text}`);
     }
 
     const result = await response.json();
     return result.data;
   }
 
-  // CASE 2: TEXT ONLY
+  /* ---------- CASE 2: TEXT ONLY ---------- */
   if (!textData || !textData.trim()) {
-    throw new Error("No input provided");
+    throw new Error("No text or document provided");
   }
 
   const response = await fetch(
@@ -78,7 +82,8 @@ export const analyzeTransactionsAI = async (
   );
 
   if (!response.ok) {
-    throw new Error("Text analysis failed");
+    const text = await response.text();
+    throw new Error(`Text analysis failed: ${text}`);
   }
 
   const result = await response.json();
