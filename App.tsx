@@ -98,7 +98,13 @@ const App: React.FC = () => {
         fileData = { inlineData: { data: base64, mimeType: selectedFile.type } };
       }
 
-      const result = await analyzeTransactionsAI(inputText, fileData, mode, accountType);
+      const result = await analyzeTransactionsAI(
+        inputText.trim(),
+        fileData,
+        mode,
+        accountType
+      );
+      
       const mappedTransactions = result.transactions.map((t: any, idx: number) => ({ ...t, id: `txn-${Date.now()}-${idx}` }));
       
       setTransactions(prev => [...prev, ...mappedTransactions]);
@@ -110,7 +116,12 @@ const App: React.FC = () => {
       if (fileInputRef.current) fileInputRef.current.value = '';
       setActiveTab('transactions');
     } catch (error) {
-      alert("Analysis failed. Ensure document is clear.");
+      alert(
+        selectedFile
+          ? "Document analysis failed. Please upload a clear PDF or image."
+          : "Text analysis failed. Please check the input."
+      );
+      
     } finally {
       setIsProcessing(false);
     }
