@@ -39,25 +39,41 @@ export const analyzeTransactionsAI = async (
     });
 
     const formData = new FormData();
-    formData.append("file", blob, "document");
+    
+    // Determine file extension
+    let filename = "document";
+    if (fileData.inlineData.mimeType === "application/pdf") {
+      filename = "document.pdf";
+    } else if (fileData.inlineData.mimeType === "image/png") {
+      filename = "document.png";
+    } else if (fileData.inlineData.mimeType === "image/jpeg") {
+      filename = "document.jpg";
+    }
+    
+    formData.append("file", blob, filename);
     formData.append("mode", mode);
     formData.append("accountType", accountType);
+
+    console.log("📤 Uploading file:", filename, "Mode:", mode, "Account:", accountType);
 
     const response = await fetch(
       `${API_BASE_URL}/generate-report/upload`,
       {
         method: "POST",
         body: formData
-        // ❌ DO NOT set headers here (multer needs boundary)
+        // ❌ DO NOT set Content-Type header (browser sets it with boundary)
       }
     );
 
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Document analysis failed: ${text}`);
+      const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+      console.error("❌ Upload failed:", errorData);
+      throw new Error(errorData.error || `Upload failed with status ${response.status}`);
     }
 
     const result = await response.json();
+    console.log("✅ Upload successful:", result);
+    
     return result.data;
   }
 
@@ -65,6 +81,8 @@ export const analyzeTransactionsAI = async (
   if (!textData || !textData.trim()) {
     throw new Error("No text or document provided");
   }
+
+  console.log("📤 Sending text analysis request");
 
   const response = await fetch(
     `${API_BASE_URL}/generate-report`,
@@ -82,10 +100,13 @@ export const analyzeTransactionsAI = async (
   );
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Text analysis failed: ${text}`);
+    const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+    console.error("❌ Text analysis failed:", errorData);
+    throw new Error(errorData.error || `Analysis failed with status ${response.status}`);
   }
 
   const result = await response.json();
+  console.log("✅ Text analysis successful:", result);
+  
   return result.data;
 };
