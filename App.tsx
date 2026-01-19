@@ -1,5 +1,5 @@
-
 import React, { useState, useMemo, useRef } from 'react';
+import { createWorker } from 'tesseract.js';
 import { 
   Transaction, 
   ATLSummary, 
@@ -14,7 +14,7 @@ import {
   formatINR,
   BRAND_FOOTER
 } from './constants';
-import { analyzeTransactionsAI, FileData } from './services/geminiService';
+import { analyzeTransactionsAI } from './services/geminiService';
 import { SummaryCards } from './components/SummaryCards';
 import { UtilisationCertificate, AuditIntelligenceReport } from './components/Reports';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
@@ -25,6 +25,7 @@ const App: React.FC = () => {
   const [accountType, setAccountType] = useState<'Savings' | 'Current'>('Savings');
   const [schoolName, setSchoolName] = useState('Central Academy Senior Secondary School');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState(0);
   
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [observations, setObservations] = useState<AuditObservation[]>([]);
@@ -37,10 +38,8 @@ const App: React.FC = () => {
   const summary = useMemo<ATLSummary>(() => {
     const limits = accountType === 'Current' ? ATL_FUNDING_LIMITS.NET_WITH_TDS : ATL_FUNDING_LIMITS.GROSS;
     
-    // Sanctioned is the full expected gross
     const totalSanctioned = ATL_FUNDING_LIMITS.GROSS.TOTAL;
     
-    // Expenditure Debits
     const debits = transactions.filter(t => t.type === 'Debit' && t.category !== ExpenseCategory.INELIGIBLE);
     const credits = transactions.filter(t => t.type === 'Credit' || t.category === ExpenseCategory.INTEREST || t.category === ExpenseCategory.GRANT_RECEIPT);
     
@@ -49,7 +48,6 @@ const App: React.FC = () => {
     const recurringUtilized = debits.filter(t => t.category === ExpenseCategory.RECURRING).reduce((acc, t) => acc + t.amount, 0);
     const interestEarned = credits.filter(t => t.category === ExpenseCategory.INTEREST).reduce((acc, t) => acc + t.amount, 0);
 
-    // Dynamic Risk Score based on category-specific overspending
     const nonRecCap = limits.T1_NON_RECURRING;
     const overspentNR = nonRecurringUtilized > nonRecCap;
     
@@ -67,7 +65,6 @@ const App: React.FC = () => {
 
     debits.forEach(t => { if (trancheBreakdown[t.tranche]) trancheBreakdown[t.tranche].spent += t.amount; });
 
-    // Current balance based on actual net receipts
     const totalReceivedNet = (limits.TRANCHE_1 + limits.TRANCHE_2 + limits.TRANCHE_3);
     const currentBalance = totalReceivedNet + interestEarned - totalUtilized;
 
@@ -83,29 +80,59 @@ const App: React.FC = () => {
     };
   }, [transactions, accountType]);
 
+  // OCR function using Tesseract.js
+  const extractTextFromFile = async (file: File): Promise<string> => {
+    setOcrProgress(0);
+    
+    const worker = await createWorker({
+      logger: (m) => {
+        if (m.status === 'recognizing text') {
+          setOcrProgress(Math.round(m.progress * 100));
+        }
+      }
+    });
+
+    await worker.loadLanguage('eng');
+    await worker.initialize('eng');
+    
+    const { data: { text } } = await worker.recognize(file);
+    await worker.terminate();
+    
+    setOcrProgress(0);
+    return text;
+  };
+
   const handleProcess = async () => {
     if (!inputText.trim() && !selectedFile) return;
     setIsProcessing(true);
+    
     try {
-      let fileData: FileData | undefined;
+      let textToAnalyze = inputText.trim();
+
+      // If file selected, extract text using Tesseract OCR
       if (selectedFile) {
-        const reader = new FileReader();
-        const base64Promise = new Promise<string>((resolve) => {
-          reader.onload = () => resolve((reader.result as string).split(',')[1]);
-          reader.readAsDataURL(selectedFile);
-        });
-        const base64 = await base64Promise;
-        fileData = { inlineData: { data: base64, mimeType: selectedFile.type } };
+        console.log('📄 File selected, extracting text with Tesseract OCR...');
+        textToAnalyze = await extractTextFromFile(selectedFile);
+        console.log('✅ OCR completed, extracted', textToAnalyze.length, 'characters');
+        
+        if (!textToAnalyze || textToAnalyze.length < 50) {
+          alert('Could not extract readable text from the file. Please ensure the image/PDF is clear.');
+          return;
+        }
       }
 
+      // Send text to Gemini for analysis
       const result = await analyzeTransactionsAI(
-        inputText.trim(),
-        fileData,
+        textToAnalyze,
+        undefined, // No file data needed anymore
         mode,
         accountType
       );
       
-      const mappedTransactions = result.transactions.map((t: any, idx: number) => ({ ...t, id: `txn-${Date.now()}-${idx}` }));
+      const mappedTransactions = result.transactions.map((t: any, idx: number) => ({ 
+        ...t, 
+        id: `txn-${Date.now()}-${idx}` 
+      }));
       
       setTransactions(prev => [...prev, ...mappedTransactions]);
       setObservations(result.observations || []);
@@ -115,15 +142,11 @@ const App: React.FC = () => {
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       setActiveTab('transactions');
-    } catch (error) {
-      alert(
-        selectedFile
-          ? "Document analysis failed. Please upload a clear PDF or image."
-          : "Text analysis failed. Please check the input."
-      );
-      
+    } catch (error: any) {
+      alert(error.message || 'Analysis failed. Please try again.');
     } finally {
       setIsProcessing(false);
+      setOcrProgress(0);
     }
   };
 
@@ -233,12 +256,26 @@ const App: React.FC = () => {
                     <input type="file" ref={fileInputRef} onChange={(e) => e.target.files && setSelectedFile(e.target.files[0])} className="hidden" accept="application/pdf,image/*" />
                     <div className="text-slate-500 group-hover:text-indigo-400 transition-colors">
                       <svg className="w-10 h-10 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                      <p className="text-xs font-bold uppercase">{selectedFile ? selectedFile.name : 'Upload T1/T2 Statement'}</p>
+                      <p className="text-xs font-bold uppercase">{selectedFile ? selectedFile.name : 'Upload PDF/Image'}</p>
+                      <p className="text-[10px] mt-1 opacity-50">FREE OCR - No billing required</p>
                     </div>
                   </div>
-                  <textarea value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Paste narrations..." className="w-full h-24 bg-slate-800 border border-slate-700 rounded-xl p-4 text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none text-slate-300" />
+                  
+                  {ocrProgress > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-indigo-400 font-bold">Extracting Text...</span>
+                        <span className="text-slate-400">{ocrProgress}%</span>
+                      </div>
+                      <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-indigo-600 transition-all duration-300" style={{ width: `${ocrProgress}%` }}></div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <textarea value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Or paste transaction text directly..." className="w-full h-24 bg-slate-800 border border-slate-700 rounded-xl p-4 text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none text-slate-300" />
                   <button onClick={handleProcess} disabled={isProcessing || (!inputText.trim() && !selectedFile)} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-indigo-500/20 transition-all disabled:opacity-50">
-                    {isProcessing ? "Processing..." : `Analyze ${accountType} Audit`}
+                    {isProcessing ? (ocrProgress > 0 ? `OCR: ${ocrProgress}%` : "Analyzing...") : `Analyze ${accountType} Audit`}
                   </button>
                 </div>
               </div>
@@ -341,7 +378,7 @@ const App: React.FC = () => {
               <p className="font-black text-white text-lg tracking-tight uppercase">STEMROBO</p>
             </div>
             <p className="text-xs leading-relaxed opacity-50 font-medium">
-              ATL Audit Intelligence Engine. Strictly enforcing NITI Aayog capital expenditure caps and TDS reconciliation protocols for school innovation labs.
+              ATL Audit Intelligence Engine with FREE OCR. Enforcing NITI Aayog capital expenditure caps and TDS reconciliation protocols.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-12 text-[10px] font-black uppercase tracking-widest">
