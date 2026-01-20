@@ -83,23 +83,35 @@ const App: React.FC = () => {
   // OCR function using Tesseract.js
   const extractTextFromFile = async (file: File): Promise<string> => {
     setOcrProgress(0);
+    console.log('🔍 Starting Tesseract OCR...');
+    console.log('File:', file.name, 'Type:', file.type, 'Size:', file.size);
     
-    const worker = await createWorker({
-      logger: (m) => {
-        if (m.status === 'recognizing text') {
-          setOcrProgress(Math.round(m.progress * 100));
+    try {
+      const worker = await createWorker('eng', 1, {
+        logger: (m) => {
+          console.log('Tesseract:', m);
+          if (m.status === 'recognizing text') {
+            setOcrProgress(Math.round(m.progress * 100));
+          }
         }
-      }
-    });
+      });
 
-    await worker.loadLanguage('eng');
-    await worker.initialize('eng');
-    
-    const { data: { text } } = await worker.recognize(file);
-    await worker.terminate();
-    
-    setOcrProgress(0);
-    return text;
+      console.log('✅ Tesseract worker created');
+      
+      const { data: { text } } = await worker.recognize(file);
+      
+      console.log('✅ OCR complete, text length:', text.length);
+      console.log('First 200 chars:', text.substring(0, 200));
+      
+      await worker.terminate();
+      setOcrProgress(0);
+      
+      return text;
+    } catch (error: any) {
+      console.error('❌ OCR Error:', error);
+      setOcrProgress(0);
+      throw new Error(`OCR failed: ${error.message}`);
+    }
   };
 
   const handleProcess = async () => {
