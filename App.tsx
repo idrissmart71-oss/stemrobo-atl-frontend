@@ -80,58 +80,26 @@ const App: React.FC = () => {
     };
   }, [transactions, accountType]);
 
-  // OCR function using Tesseract.js
+  // OCR function - Images only
   const extractTextFromFile = async (file: File): Promise<string> => {
     setOcrProgress(0);
     console.log('🔍 Starting OCR...');
     console.log('File:', file.name, 'Type:', file.type, 'Size:', file.size);
     
+    // Block PDFs - guide users to convert
+    if (file.type === 'application/pdf') {
+      throw new Error(
+        'PDF files are not supported for OCR.\n\n' +
+        'Please convert your PDF to an image first:\n' +
+        '1. Open PDF in any PDF viewer\n' +
+        '2. Take a screenshot (Windows: Win+Shift+S, Mac: Cmd+Shift+4)\n' +
+        '3. Save as JPG/PNG\n' +
+        '4. Upload the image\n\n' +
+        'OR EASIER: Copy text from PDF and paste directly!'
+      );
+    }
+    
     try {
-      let imageToProcess: string | File = file;
-      
-      // If PDF, convert first page to image
-      if (file.type === 'application/pdf') {
-        console.log('📄 PDF detected, converting to image...');
-        
-        // Read PDF as base64
-        const arrayBuffer = await file.arrayBuffer();
-        const base64 = btoa(
-          new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-        );
-        
-        // Use PDF.js via CDN to render PDF
-        const pdfjsLib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/+esm');
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
-        
-        const pdf = await pdfjsLib.getDocument({ data: atob(base64) }).promise;
-        console.log(`📄 PDF loaded, ${pdf.numPages} pages`);
-        
-        // Render first page to canvas
-        const page = await pdf.getPage(1);
-        const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better OCR
-        
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d')!;
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-        
-        await page.render({ canvasContext: context, viewport }).promise;
-        
-        // Convert canvas to blob
-        imageToProcess = await new Promise<string>((resolve) => {
-          canvas.toBlob((blob) => {
-            if (blob) {
-              resolve(URL.createObjectURL(blob));
-            }
-          }, 'image/png');
-        });
-        
-        console.log('✅ PDF converted to image');
-      } else if (typeof imageToProcess !== 'string') {
-        imageToProcess = URL.createObjectURL(file);
-      }
-      
-      // Create Tesseract worker
       const worker = await createWorker('eng', 1, {
         workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
         langPath: 'https://tessdata.projectnaptha.com/4.0.0',
@@ -143,31 +111,33 @@ const App: React.FC = () => {
         }
       });
 
-      console.log('✅ Tesseract worker created, processing...');
+      console.log('✅ Tesseract worker created');
       
-      const { data: { text } } = await worker.recognize(imageToProcess);
+      const imageUrl = URL.createObjectURL(file);
+      const { data: { text } } = await worker.recognize(imageUrl);
+      URL.revokeObjectURL(imageUrl);
       
-      // Clean up
-      if (typeof imageToProcess === 'string') {
-        URL.revokeObjectURL(imageToProcess);
-      }
-      
-      console.log('✅ OCR complete');
-      console.log('Extracted text length:', text.length);
-      console.log('First 300 chars:', text.substring(0, 300));
+      console.log('✅ OCR complete, extracted', text.length, 'chars');
+      console.log('Preview:', text.substring(0, 300));
       
       await worker.terminate();
       setOcrProgress(0);
       
       if (!text || text.trim().length < 50) {
-        throw new Error('Could not extract enough text. The document may be:\n- Too blurry or low quality\n- Scanned at low resolution\n- Protected or encrypted\n\nPlease try:\n1. Using a higher quality scan\n2. Converting to JPG/PNG first\n3. Pasting text directly');
+        throw new Error(
+          'Not enough text extracted. The image might be:\n' +
+          '- Too blurry or low resolution\n' +
+          '- Too small (please use high-res image)\n' +
+          '- Handwritten (OCR works best with printed text)\n\n' +
+          'Try: Taking a clearer screenshot or pasting text directly'
+        );
       }
       
       return text;
     } catch (error: any) {
       console.error('❌ OCR Error:', error);
       setOcrProgress(0);
-      throw new Error(error.message || 'OCR processing failed');
+      throw error;
     }
   };
 
@@ -327,13 +297,13 @@ const App: React.FC = () => {
                       ref={fileInputRef} 
                       onChange={(e) => e.target.files && setSelectedFile(e.target.files[0])} 
                       className="hidden" 
-                      accept="image/*,application/pdf"
+                      accept="image/*"
                     />
                     <div className="text-slate-500 group-hover:text-indigo-400 transition-colors">
-                      <svg className="w-10 h-10 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                      <p className="text-xs font-bold uppercase">{selectedFile ? selectedFile.name : 'Upload Image or PDF'}</p>
-                      <p className="text-[10px] mt-1 opacity-50">FREE OCR - For best results use JPG/PNG</p>
-                      <p className="text-[9px] mt-1 opacity-40 italic">PDFs: Convert to image first for better accuracy</p>
+                      <svg className="w-10 h-10 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                      <p className="text-xs font-bold uppercase">{selectedFile ? selectedFile.name : 'Upload Screenshot (JPG/PNG)'}</p>
+                      <p className="text-[10px] mt-1 opacity-50">FREE OCR - Images only</p>
+                      <p className="text-[9px] mt-1 opacity-40 italic">For PDFs: Take screenshot or paste text</p>
                     </div>
                   </div>
                   
