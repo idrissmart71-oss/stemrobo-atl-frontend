@@ -87,7 +87,11 @@ const App: React.FC = () => {
     console.log('File:', file.name, 'Type:', file.type, 'Size:', file.size);
     
     try {
+      // Create worker with explicit CDN paths
       const worker = await createWorker('eng', 1, {
+        workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
+        langPath: 'https://tessdata.projectnaptha.com/4.0.0',
+        corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js',
         logger: (m) => {
           console.log('Tesseract:', m);
           if (m.status === 'recognizing text') {
@@ -98,19 +102,29 @@ const App: React.FC = () => {
 
       console.log('✅ Tesseract worker created');
       
-      const { data: { text } } = await worker.recognize(file);
+      // Convert file to image URL for better compatibility
+      const imageUrl = URL.createObjectURL(file);
+      
+      const { data: { text } } = await worker.recognize(imageUrl);
+      
+      // Clean up
+      URL.revokeObjectURL(imageUrl);
       
       console.log('✅ OCR complete, text length:', text.length);
-      console.log('First 200 chars:', text.substring(0, 200));
+      console.log('First 300 chars:', text.substring(0, 300));
       
       await worker.terminate();
       setOcrProgress(0);
+      
+      if (!text || text.trim().length < 50) {
+        throw new Error('Extracted text is too short or empty. The image may not be clear enough.');
+      }
       
       return text;
     } catch (error: any) {
       console.error('❌ OCR Error:', error);
       setOcrProgress(0);
-      throw new Error(`OCR failed: ${error.message}`);
+      throw new Error(`OCR failed: ${error.message || 'Unknown error'}. Try: 1) Using a clearer image, 2) Converting PDF to JPG first, 3) Pasting text directly`);
     }
   };
 
