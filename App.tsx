@@ -322,11 +322,18 @@ const App: React.FC = () => {
                 <h3 className="font-black uppercase tracking-tighter text-lg mb-6">Audit Engine</h3>
                 <div className="space-y-6">
                   <div onClick={() => fileInputRef.current?.click()} className="group border-2 border-dashed border-slate-700 rounded-2xl p-6 text-center cursor-pointer hover:border-indigo-500 transition-all bg-slate-800/50">
-                    <input type="file" ref={fileInputRef} onChange={(e) => e.target.files && setSelectedFile(e.target.files[0])} className="hidden" accept="application/pdf,image/*" />
+                    <input 
+                      type="file" 
+                      ref={fileInputRef} 
+                      onChange={(e) => e.target.files && setSelectedFile(e.target.files[0])} 
+                      className="hidden" 
+                      accept="image/*,application/pdf"
+                    />
                     <div className="text-slate-500 group-hover:text-indigo-400 transition-colors">
                       <svg className="w-10 h-10 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                      <p className="text-xs font-bold uppercase">{selectedFile ? selectedFile.name : 'Upload PDF/Image'}</p>
-                      <p className="text-[10px] mt-1 opacity-50">FREE OCR - No billing required</p>
+                      <p className="text-xs font-bold uppercase">{selectedFile ? selectedFile.name : 'Upload Image or PDF'}</p>
+                      <p className="text-[10px] mt-1 opacity-50">FREE OCR - For best results use JPG/PNG</p>
+                      <p className="text-[9px] mt-1 opacity-40 italic">PDFs: Convert to image first for better accuracy</p>
                     </div>
                   </div>
                   
