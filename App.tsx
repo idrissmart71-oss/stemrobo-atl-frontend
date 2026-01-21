@@ -349,7 +349,20 @@ const App: React.FC = () => {
                     </div>
                   )}
                   
-                  <textarea value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Or paste transaction text directly..." className="w-full h-24 bg-slate-800 border border-slate-700 rounded-xl p-4 text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none text-slate-300" />
+                  <textarea 
+                    value={inputText} 
+                    onChange={(e) => setInputText(e.target.value)} 
+                    placeholder="📋 RECOMMENDED: Copy text from your bank statement and paste here...
+
+Example format:
+Date | Description | Amount | Type
+01-04-2024 | Computer purchase | 50000 | DEBIT
+05-04-2024 | Staff salary | 15000 | DEBIT
+10-04-2024 | Interest credit | 250 | CREDIT
+
+Or paste the full statement text directly." 
+                    className="w-full h-32 bg-slate-800 border border-slate-700 rounded-xl p-4 text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none text-slate-300 placeholder-slate-500" 
+                  />
                   <button onClick={handleProcess} disabled={isProcessing || (!inputText.trim() && !selectedFile)} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl shadow-indigo-500/20 transition-all disabled:opacity-50">
                     {isProcessing ? (ocrProgress > 0 ? `OCR: ${ocrProgress}%` : "Analyzing...") : `Analyze ${accountType} Audit`}
                   </button>
