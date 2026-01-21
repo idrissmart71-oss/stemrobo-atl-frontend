@@ -83,48 +83,91 @@ const App: React.FC = () => {
   // OCR function using Tesseract.js
   const extractTextFromFile = async (file: File): Promise<string> => {
     setOcrProgress(0);
-    console.log('🔍 Starting Tesseract OCR...');
+    console.log('🔍 Starting OCR...');
     console.log('File:', file.name, 'Type:', file.type, 'Size:', file.size);
     
     try {
-      // Create worker with explicit CDN paths
+      let imageToProcess: string | File = file;
+      
+      // If PDF, convert first page to image
+      if (file.type === 'application/pdf') {
+        console.log('📄 PDF detected, converting to image...');
+        
+        // Read PDF as base64
+        const arrayBuffer = await file.arrayBuffer();
+        const base64 = btoa(
+          new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+        );
+        
+        // Use PDF.js via CDN to render PDF
+        const pdfjsLib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/+esm');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+        
+        const pdf = await pdfjsLib.getDocument({ data: atob(base64) }).promise;
+        console.log(`📄 PDF loaded, ${pdf.numPages} pages`);
+        
+        // Render first page to canvas
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better OCR
+        
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d')!;
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        await page.render({ canvasContext: context, viewport }).promise;
+        
+        // Convert canvas to blob
+        imageToProcess = await new Promise<string>((resolve) => {
+          canvas.toBlob((blob) => {
+            if (blob) {
+              resolve(URL.createObjectURL(blob));
+            }
+          }, 'image/png');
+        });
+        
+        console.log('✅ PDF converted to image');
+      } else if (typeof imageToProcess !== 'string') {
+        imageToProcess = URL.createObjectURL(file);
+      }
+      
+      // Create Tesseract worker
       const worker = await createWorker('eng', 1, {
         workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
         langPath: 'https://tessdata.projectnaptha.com/4.0.0',
         corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js',
         logger: (m) => {
-          console.log('Tesseract:', m);
           if (m.status === 'recognizing text') {
             setOcrProgress(Math.round(m.progress * 100));
           }
         }
       });
 
-      console.log('✅ Tesseract worker created');
+      console.log('✅ Tesseract worker created, processing...');
       
-      // Convert file to image URL for better compatibility
-      const imageUrl = URL.createObjectURL(file);
-      
-      const { data: { text } } = await worker.recognize(imageUrl);
+      const { data: { text } } = await worker.recognize(imageToProcess);
       
       // Clean up
-      URL.revokeObjectURL(imageUrl);
+      if (typeof imageToProcess === 'string') {
+        URL.revokeObjectURL(imageToProcess);
+      }
       
-      console.log('✅ OCR complete, text length:', text.length);
+      console.log('✅ OCR complete');
+      console.log('Extracted text length:', text.length);
       console.log('First 300 chars:', text.substring(0, 300));
       
       await worker.terminate();
       setOcrProgress(0);
       
       if (!text || text.trim().length < 50) {
-        throw new Error('Extracted text is too short or empty. The image may not be clear enough.');
+        throw new Error('Could not extract enough text. The document may be:\n- Too blurry or low quality\n- Scanned at low resolution\n- Protected or encrypted\n\nPlease try:\n1. Using a higher quality scan\n2. Converting to JPG/PNG first\n3. Pasting text directly');
       }
       
       return text;
     } catch (error: any) {
       console.error('❌ OCR Error:', error);
       setOcrProgress(0);
-      throw new Error(`OCR failed: ${error.message || 'Unknown error'}. Try: 1) Using a clearer image, 2) Converting PDF to JPG first, 3) Pasting text directly`);
+      throw new Error(error.message || 'OCR processing failed');
     }
   };
 
