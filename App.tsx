@@ -86,16 +86,15 @@ const App: React.FC = () => {
     console.log('🔍 Starting OCR...');
     console.log('File:', file.name, 'Type:', file.type, 'Size:', file.size);
     
-    // Block PDFs - guide users to convert
+    // Block PDFs
     if (file.type === 'application/pdf') {
       throw new Error(
-        'PDF files are not supported for OCR.\n\n' +
-        'Please convert your PDF to an image first:\n' +
-        '1. Open PDF in any PDF viewer\n' +
-        '2. Take a screenshot (Windows: Win+Shift+S, Mac: Cmd+Shift+4)\n' +
-        '3. Save as JPG/PNG\n' +
-        '4. Upload the image\n\n' +
-        'OR EASIER: Copy text from PDF and paste directly!'
+        'PDF files not supported.\n\n' +
+        'Quick fix:\n' +
+        '1. Open PDF\n' +
+        '2. Screenshot it (Win+Shift+S)\n' +
+        '3. Upload JPG/PNG\n\n' +
+        'OR: Copy-paste text directly (recommended!)'
       );
     }
     
@@ -111,25 +110,42 @@ const App: React.FC = () => {
         }
       });
 
-      console.log('✅ Tesseract worker created');
+      console.log('✅ Tesseract initialized');
       
       const imageUrl = URL.createObjectURL(file);
-      const { data: { text } } = await worker.recognize(imageUrl);
+      const { data: { text, confidence } } = await worker.recognize(imageUrl);
       URL.revokeObjectURL(imageUrl);
       
-      console.log('✅ OCR complete, extracted', text.length, 'chars');
-      console.log('Preview:', text.substring(0, 300));
+      console.log('✅ OCR complete');
+      console.log('- Extracted:', text.length, 'chars');
+      console.log('- Confidence:', confidence, '%');
+      console.log('- Preview:', text.substring(0, 200));
       
       await worker.terminate();
       setOcrProgress(0);
       
-      if (!text || text.trim().length < 50) {
+      // More lenient check - accept if we got ANY text
+      if (!text || text.trim().length < 20) {
         throw new Error(
-          'Not enough text extracted. The image might be:\n' +
-          '- Too blurry or low resolution\n' +
-          '- Too small (please use high-res image)\n' +
-          '- Handwritten (OCR works best with printed text)\n\n' +
-          'Try: Taking a clearer screenshot or pasting text directly'
+          'Very little text extracted (' + text.length + ' chars).\n\n' +
+          'Image might be:\n' +
+          '- Too small or low resolution\n' +
+          '- Blurry or unclear\n' +
+          '- Handwritten\n\n' +
+          'Try:\n' +
+          '1. Higher quality screenshot\n' +
+          '2. Zoom in on text before screenshot\n' +
+          '3. Copy-paste text instead (fastest!)'
+        );
+      }
+      
+      // Warn if low confidence but still proceed
+      if (confidence < 60) {
+        alert(
+          `⚠️ Low OCR confidence (${Math.round(confidence)}%).\n\n` +
+          `Extracted ${text.length} characters.\n` +
+          `Results may be inaccurate.\n\n` +
+          `For better accuracy, copy-paste text directly.`
         );
       }
       
